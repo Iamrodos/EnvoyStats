@@ -2,6 +2,12 @@
 
 Display the status of your Enphase Envoy solar system by querying the Envoy on the local network. The script outputs the results in a format which can be used by the BitBar utility (see https://github.com/matryer/bitbar) to display the results in your Mac OS X Menu Bar.
 
+# Examples
+
+![Example 1](https://raw.githubusercontent.com/Iamrodos/EnvoyStats/main/envoy%20menu%20bar%20example%201.png)
+
+![Example 3](https://raw.githubusercontent.com/Iamrodos/EnvoyStats/main/envoy%20menu%20bar%20example%203.png)
+
 # Setup
 
 ## 1. Installation
