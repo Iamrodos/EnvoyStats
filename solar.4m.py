@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+
+# Solar monitoring xbar plugin for Enphase Envoy (IQ Gateway)
+# By rodos@haywood.org
+#
+# Displays current solar production, consumption and grid import/export.
+# Reads JWT token from macOS Keychain.
+#
+# TOKEN SETUP:
+#   The Envoy requires a JWT token from Enphase (valid for 1 year).
+#   To fetch or refresh a token, run this script with --setup:
+#
+#     python3 ~/Library/Application\ Support/xbar/plugins/solar.4m.py --setup
+#
+#   This will prompt for your Enphase account credentials, fetch a token,
+#   and store it securely in the macOS Keychain.
+
+import json
+import subprocess
+import sys
+import ssl
+import urllib.request
+
+ENVOY_IP = "ENTER_YOUR_ENVOY_IP"
+SYSTEM_SIZE_WATTS = 6000  # Your system size in watts
+KEYCHAIN_ACCOUNT = "envoy-solar"
+KEYCHAIN_SERVICE = "envoy-jwt-token"
+
+
+def get_token_from_keychain():
+    """Retrieve the Envoy JWT token from macOS Keychain."""
+    result = subprocess.run(
+        ["security", "find-generic-password", "-a", KEYCHAIN_ACCOUNT, "-s", KEYCHAIN_SERVICE, "-w"],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def save_token_to_keychain(token):
+    """Store the Envoy JWT token in macOS Keychain."""
+    subprocess.run(
+        ["security", "add-generic-password", "-a", KEYCHAIN_ACCOUNT, "-s", KEYCHAIN_SERVICE, "-w", token, "-U"],
+        check=True
+    )
+
+
+def setup_token():
+    """Interactive setup: fetch a new JWT token from Enphase and store in Keychain."""
+    import getpass
+
+    print("Enphase Envoy Token Setup")
+    print("=" * 40)
+    email = input("Enphase account email: ")
+    password = getpass.getpass("Enphase account password: ")
+
+    # Get session ID
+    print("Fetching session ID...")
+    login_data = json.dumps({"user": {"email": email, "password": password}}).encode()
+    req = urllib.request.Request(
+        "https://enlighten.enphaseenergy.com/login/login.json",
+        data=login_data,
+        headers={"Content-Type": "application/json"}
+    )
+    resp = urllib.request.urlopen(req)
+    login_resp = json.loads(resp.read())
+    session_id = login_resp.get("session_id")
+    if not session_id:
+        print(f"Login failed: {login_resp}")
+        sys.exit(1)
+
+    # Get serial number from Envoy
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    req = urllib.request.Request(f"https://{ENVOY_IP}/info.xml")
+    resp = urllib.request.urlopen(req, context=ctx)
+    import re
+    match = re.search(r"<sn>(\d+)</sn>", resp.read().decode())
+    if not match:
+        print("Could not find serial number in Envoy info.xml")
+        sys.exit(1)
+    serial = match.group(1)
+    print(f"Envoy serial: {serial}")
+
+    # Fetch token
+    print("Fetching token...")
+    token_data = json.dumps({"session_id": session_id, "serial_num": serial, "username": email}).encode()
+    req = urllib.request.Request(
+        "https://entrez.enphaseenergy.com/tokens",
+        data=token_data,
+        headers={"Content-Type": "application/json"}
+    )
+    resp = urllib.request.urlopen(req)
+    token = resp.read().decode().strip()
+
+    if not token.startswith("ey"):
+        print(f"Unexpected token response: {token}")
+        sys.exit(1)
+
+    # Decode expiry for display
+    import base64
+    payload = token.split(".")[1] + "=="
+    claims = json.loads(base64.b64decode(payload))
+    from datetime import datetime
+    expiry = datetime.fromtimestamp(claims["exp"])
+    print(f"Token expires: {expiry.strftime('%Y-%m-%d')}")
+
+    # Store in keychain
+    save_token_to_keychain(token)
+    print("Token saved to macOS Keychain.")
+
+    # Verify it works
+    print("Testing against Envoy...")
+    req = urllib.request.Request(
+        f"https://{ENVOY_IP}/production.json?details=1",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    resp = urllib.request.urlopen(req, context=ctx)
+    if resp.status == 200:
+        print("Success! Script should now work.")
+    else:
+        print(f"Warning: Envoy returned HTTP {resp.status}")
+
+
+def envoy_request(path, token):
+    """Make an authenticated HTTPS request to the Envoy."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    req = urllib.request.Request(
+        f"https://{ENVOY_IP}{path}",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    resp = urllib.request.urlopen(req, context=ctx, timeout=30)
+    return json.loads(resp.read())
+
+
+def short_number(val):
+    """Format a number: values >= 1000 get a 'k' suffix."""
+    val = abs(val)
+    if val < 1000:
+        return str(round(val))
+    return f"{val / 1000:.1f}k"
+
+
+def format_kwh(wh):
+    """Format watt-hours as kWh with appropriate precision."""
+    kwh = abs(wh) / 1000
+    if kwh < 10:
+        return f"{kwh:.1f} kWh"
+    elif kwh < 1000:
+        return f"{kwh:.0f} kWh"
+    else:
+        return f"{kwh / 1000:.1f} MWh"
+
+
+def comma_separated(val):
+    """Add comma separators to a number."""
+    return f"{round(val):,}"
+
+
+def main():
+    if "--setup" in sys.argv:
+        setup_token()
+        return
+
+    try:
+        token = get_token_from_keychain()
+        if not token:
+            print(":warning: No token| size=12")
+            print("---")
+            print("Run: python3 solar.4m.py --setup| size=12")
+            return
+
+        # Get production and consumption data
+        data = envoy_request("/production.json?details=1", token)
+        production = data["production"][1]
+        consumption = data["consumption"][0]
+        net = data["consumption"][1]
+
+        producing = production["wNow"]
+        consuming = consumption["wNow"]
+        importing = net["wNow"]
+
+        # Choose icon based on power state
+        if importing > 0:
+            icon = "\U0001F50C"  # Power plug
+        elif producing < (SYSTEM_SIZE_WATTS / 2):
+            icon = "\u26C5"  # Cloudy
+        else:
+            icon = "\u2600\uFE0F"  # Sun
+
+        colour = "orange" if importing > 0 else "green"
+        print(f"{icon} {short_number(importing)}W| color={colour} size=12")
+        print("---")
+
+        # Current power
+        print(f"Producing  {comma_separated(producing)}W| size=12")
+
+        # House consumption with solar percentage
+        if producing > 0:
+            solar_pct = min(100, (producing / consuming) * 100) if consuming > 0 else 0
+            pct_colour = "green" if solar_pct >= 100 else "orange"
+            print(f"\U0001F3E0 {comma_separated(consuming)}W ({solar_pct:.0f}% solar)| size=12 color={pct_colour}")
+        else:
+            print(f"\U0001F3E0 {comma_separated(consuming)}W| size=12")
+
+        # Grid direction: → exporting, ← importing
+        if importing > 0:
+            print(f"\u2190 {comma_separated(importing)}W \u26A1| size=12 color=orange")
+        else:
+            print(f"\u2192 {comma_separated(abs(importing))}W \u26A1| size=12 color=green")
+
+        print("---")
+
+        # Energy totals
+        print(f"Today      {format_kwh(production['whToday'])}| size=12")
+        print(f"This Week  {format_kwh(production['whLastSevenDays'])}| size=12")
+        print(f"Lifetime   {format_kwh(production['whLifetime'])}| size=12")
+
+        print("---")
+
+        # Inverter data
+        inverters = envoy_request("/api/v1/production/inverters", token)
+        active = [inv["lastReportWatts"] for inv in inverters if inv["lastReportWatts"] >= 2]
+        yield_pct = (producing / SYSTEM_SIZE_WATTS) * 100 if SYSTEM_SIZE_WATTS > 0 else 0
+        if active:
+            print(f"{len(inverters)} panels: {min(active)}W\u2013{max(active)}W ({yield_pct:.0f}% yield)| size=12")
+        else:
+            print("No inverters generating.| size=12")
+
+        # Voltage per phase
+        lines = production.get("lines", [])
+        if lines:
+            voltages = "/".join(f"{line['rmsVoltage']:.0f}" for line in lines)
+            print(f"Voltage: {voltages}V| size=12")
+
+    except Exception as e:
+        print(":warning: Error| size=12")
+        print("---")
+        print(str(e))
+
+
+if __name__ == "__main__":
+    main()

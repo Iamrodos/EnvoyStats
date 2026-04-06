@@ -1,62 +1,89 @@
-# Purpose
+# EnvoyStats
 
-Display the status of your Enphase Envoy solar system by querying the Envoy on the local network. The script outputs the results in a format which can be used by the BitBar utility (see https://github.com/matryer/bitbar) to display the results in your Mac OS X Menu Bar.
+Display the status of your Enphase Envoy (IQ Gateway) solar system in your macOS menu bar using [xbar](https://xbarapp.com/).
 
-# Examples
+Queries your Envoy on the local network over HTTPS using token-based authentication. No external dependencies — uses only Python 3 standard library and macOS Keychain for secure token storage.
 
-![Example 1](https://raw.githubusercontent.com/Iamrodos/EnvoyStats/main/envoy%20menu%20bar%20example%201.png)
+<!-- TODO: Add new screenshots here -->
 
-![Example 3](https://raw.githubusercontent.com/Iamrodos/EnvoyStats/main/envoy%20menu%20bar%20example%203.png)
+## Menu Bar Display
 
-# Setup
+The menu bar icon changes based on your power state:
 
-## 1. Installation
+| Icon | Meaning |
+|------|---------|
+| ☀️   | Exporting to grid, producing above 50% of system capacity |
+| ⛅   | Exporting to grid, producing below 50% of system capacity |
+| 🔌   | Importing from grid |
 
-### 1a. Install BitBar
+The dropdown shows:
 
-Follow the instructions for this on the BitBar page at https://github.com/matryer/bitbar#get-started
+- Current production (watts)
+- House consumption with solar percentage
+- Grid import/export with direction arrows
+- Energy totals (today, this week, lifetime)
+- Per-panel output range and system yield
+- Voltage per phase
 
-### 1b. Copy the script to the correct folder
+## Migrating from v1 (Ruby script)
 
-Download the script and place it in your BitBar plugins directory.
+Enphase firmware D8.x changed the Envoy (IQ Gateway) to require HTTPS and token-based authentication. The previous Ruby script used HTTP and digest auth which no longer works. This version has been rewritten in Python 3 with:
 
-### 1c. Ensure the script is executable.
+- HTTPS support (with self-signed certificate handling)
+- JWT token authentication via Enphase cloud
+- Secure token storage in macOS Keychain (no plaintext files)
+- Built-in `--setup` command for token management
 
-Ensure that the script is executable on the system.
+If upgrading, remove the old `solar.4m.rb` from your plugins directory and follow the setup steps below.
 
-Open the ``terminal`` application and execute ``chmod +x solar.4m.rb``. Note you may need to change directory to where the script is or specify its path on the command. 
+## Setup
 
-## 2. Configure
+### 1. Install xbar
 
-### 2a. Set the IP address of your system
+Download and install from [xbarapp.com](https://xbarapp.com/).
 
-The script will make requests to your Envoy over the local network and therefore needs its IP address. It will look like 4 sets of numbers separated by dots. For example 192.168.0.100 or 10.0.0.40.
+### 2. Copy the script
 
-If you don't know the IP addres of you Envoy you can do this via the app. 
+Download `solar.4m.py` and place it in your xbar plugins directory:
 
-1. Open the Enlighten application on your device.
-2. Click the "Menu" button on the bottom right of the screen.
-3. Click "Devices".
-4. Click "Envoy".
-5. Click "Connect Locally".
-6. Click the "Connect" button. This will open the local browser on your device. 
+```
+~/Library/Application Support/xbar/plugins/
+```
 
-If you don't have the app, you might be able to find it via looking at your local router and listing its connected devices. How do do that is beyond these instructions. 
+Make it executable:
 
-Once you have the IP address, edit the script in a text editor and replacing the placeholder value with the IP address.
+```bash
+chmod +x ~/Library/Application\ Support/xbar/plugins/solar.4m.py
+```
 
-`ENVOY_IP = "enter your IP address here"`
+### 3. Configure
 
-### 2b. Set the size of your system
+Edit the script and set your Envoy's IP address and system size:
 
-The script changes its icon depending on how much power is being consumed and generated. If you are consuming more than you are generating it will show a power plug to show that pulling from the grid. If you are generating more than you are using it will show either a sun covered by a cloud, or a bright sun. It uses the cloudy icon if the amount being generated is less than half of the size of your system. Above half and it uses the sun icon. There is no way to determine system size from the local ENVOY (that I have found), so you need to set the value in the script. Enter a value in watts. 
+```python
+ENVOY_IP = "ENTER_YOUR_ENVOY_IP"
+SYSTEM_SIZE_WATTS = 6000  # Your system size in watts
+```
 
-Here is the line you want to change.
+To find your Envoy's IP address:
 
-`SYSTEM_SIZE_WATTS = 6000`
+1. Open the Enlighten app on your device.
+2. Tap Menu > Devices > Envoy > Connect Locally > Connect.
 
-### 2b. Set how often you want to update the value
+Alternatively, check your router's connected devices list.
 
-BitBar uses the file name of the script to determine how freqently it is run. 
+### 4. Authenticate
 
-For example a filename of `solar.4m.rb` will run every 4 minutes. Change the number for how frequently to refresh. Having a low value will place a great load on your Envoy's processing. Don't recomend going under a minute. The script comes set to 4 minute (4m). 
+Newer Envoy firmware requires a JWT token for API access. The script fetches this from Enphase and stores it securely in your macOS Keychain.
+
+Run the setup command:
+
+```bash
+python3 ~/Library/Application\ Support/xbar/plugins/solar.4m.py --setup
+```
+
+This will prompt for your Enphase account credentials (the same ones you use for the Enlighten app), fetch a token, and store it in Keychain. The token is valid for 1 year — re-run the setup command to refresh it.
+
+### 5. Refresh rate
+
+xbar uses the filename to determine how often the script runs. The default `solar.4m.py` runs every 4 minutes. Rename the file to change the interval (e.g. `solar.2m.py` for every 2 minutes). Don't go below 1 minute to avoid overloading your Envoy.
