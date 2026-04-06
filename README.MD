@@ -72,6 +72,6 @@ This will prompt for:
 
 The setup fetches a JWT token from Enphase and stores it securely in your macOS Keychain. Configuration (IP and system size) is saved to `solar.config.json` alongside the script. The token is valid for 1 year — re-run setup to refresh it.
 
-### 5. Refresh rate
+### 4. Refresh rate
 
 xbar uses the filename to determine how often the script runs. The default `solar.4m.py` runs every 4 minutes. Rename the file to change the interval (e.g. `solar.2m.py` for every 2 minutes). Don't go below 1 minute to avoid overloading your Envoy.

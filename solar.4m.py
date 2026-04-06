@@ -69,8 +69,8 @@ def setup_token():
 
     # Load existing config for defaults
     existing = load_config()
-    default_ip = existing["envoy_ip"] if existing else ""
-    default_size = existing["system_size_watts"] if existing else 6000
+    default_ip = existing.get("envoy_ip", "") if existing else ""
+    default_size = existing.get("system_size_watts", 6000) if existing else 6000
 
     # Prompt for Envoy IP
     if default_ip:
@@ -83,7 +83,11 @@ def setup_token():
 
     # Prompt for system size
     size_input = input(f"System size in watts [{default_size}]: ").strip()
-    system_size = int(size_input) if size_input else default_size
+    try:
+        system_size = int(size_input) if size_input else default_size
+    except ValueError:
+        print(f"Invalid number: {size_input}")
+        sys.exit(1)
 
     # Save config
     save_config(envoy_ip, system_size)
@@ -101,11 +105,11 @@ def setup_token():
         data=login_data,
         headers={"Content-Type": "application/json"}
     )
-    resp = urllib.request.urlopen(req)
+    resp = urllib.request.urlopen(req, timeout=30)
     login_resp = json.loads(resp.read())
     session_id = login_resp.get("session_id")
     if not session_id:
-        print(f"Login failed: {login_resp}")
+        print(f"Login failed: {login_resp.get('message', 'unknown error')}")
         sys.exit(1)
 
     # Get serial number from Envoy
@@ -113,7 +117,7 @@ def setup_token():
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     req = urllib.request.Request(f"https://{envoy_ip}/info.xml")
-    resp = urllib.request.urlopen(req, context=ctx)
+    resp = urllib.request.urlopen(req, context=ctx, timeout=30)
     import re
     match = re.search(r"<sn>(\d+)</sn>", resp.read().decode())
     if not match:
@@ -130,7 +134,7 @@ def setup_token():
         data=token_data,
         headers={"Content-Type": "application/json"}
     )
-    resp = urllib.request.urlopen(req)
+    resp = urllib.request.urlopen(req, timeout=30)
     token = resp.read().decode().strip()
 
     if not token.startswith("ey"):
@@ -155,7 +159,7 @@ def setup_token():
         f"https://{envoy_ip}/production.json?details=1",
         headers={"Authorization": f"Bearer {token}"}
     )
-    resp = urllib.request.urlopen(req, context=ctx)
+    resp = urllib.request.urlopen(req, context=ctx, timeout=30)
     if resp.status == 200:
         print("Success! Script should now work.")
     else:
@@ -164,6 +168,7 @@ def setup_token():
 
 def envoy_request(envoy_ip, path, token):
     """Make an authenticated HTTPS request to the Envoy."""
+    # Envoy uses a self-signed certificate on the local network
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -213,8 +218,13 @@ def main():
             print("python3 solar.4m.py --setup| size=12")
             return
 
-        envoy_ip = config["envoy_ip"]
-        system_size = config["system_size_watts"]
+        envoy_ip = config.get("envoy_ip")
+        system_size = config.get("system_size_watts", 6000)
+        if not envoy_ip:
+            print(":warning: Run --setup| size=12")
+            print("---")
+            print("Missing envoy_ip in config| size=12")
+            return
 
         # Get production and consumption data
         data = envoy_request(envoy_ip, "/production.json?details=1", token)
