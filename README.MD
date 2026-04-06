@@ -58,19 +58,21 @@ chmod +x ~/Library/Application\ Support/xbar/plugins/solar.4m.py
 
 ### 3. Run setup
 
-The setup command configures everything interactively — Envoy IP, system size, and authentication:
+Once installed, the menu bar will show a warning icon. Click it and select **Run setup...** to open Terminal and configure everything interactively.
+
+You can also run setup from the command line:
 
 ```bash
 python3 ~/Library/Application\ Support/xbar/plugins/solar.4m.py --setup
 ```
 
-This will prompt for:
+Setup will prompt for:
 
 - **Envoy IP address** — find this via the Enlighten app (Menu > Devices > Envoy > Connect Locally) or your router's connected devices list
 - **System size in watts** — used to calculate yield percentage
 - **Enphase account credentials** — the same email/password you use for the Enlighten app
 
-The setup fetches a JWT token from Enphase and stores it securely in your macOS Keychain. Configuration (IP and system size) is saved to `solar.config.json` alongside the script. The token is valid for 1 year — re-run setup to refresh it.
+The setup fetches a JWT token from Enphase and stores it securely in your macOS Keychain. Configuration (IP and system size) is saved to `solar.config.json` alongside the script. The token is valid for 1 year — the script will warn you when it's about to expire, and you can re-run setup from the menu bar to refresh it.
 
 ### 4. Refresh rate
 

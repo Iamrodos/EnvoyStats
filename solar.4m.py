@@ -20,11 +20,18 @@ import os
 import subprocess
 import sys
 import ssl
+import urllib.error
 import urllib.request
 
 KEYCHAIN_ACCOUNT = "envoy-solar"
 KEYCHAIN_SERVICE = "envoy-jwt-token"
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "solar.config.json")
+SCRIPT_PATH = os.path.abspath(__file__)
+CONFIG_PATH = os.path.join(os.path.dirname(SCRIPT_PATH), "solar.config.json")
+
+
+def setup_menu_item():
+    """Return an xbar menu item that runs --setup in Terminal when clicked."""
+    return f"Run setup...| bash={sys.executable} param1={SCRIPT_PATH} param2=--setup terminal=true size=12"
 
 
 def load_config():
@@ -143,7 +150,8 @@ def setup_token():
 
     # Decode expiry for display
     import base64
-    payload = token.split(".")[1] + "=="
+    payload = token.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
     claims = json.loads(base64.b64decode(payload))
     from datetime import datetime
     expiry = datetime.fromtimestamp(claims["exp"])
@@ -215,8 +223,27 @@ def main():
         if not config or not token:
             print(":warning: Run --setup| size=12")
             print("---")
-            print("python3 solar.4m.py --setup| size=12")
+            print(setup_menu_item())
             return
+
+        # Check token expiry
+        import base64
+        from datetime import datetime
+        try:
+            payload = token.split(".")[1]
+            payload += "=" * (-len(payload) % 4)
+            claims = json.loads(base64.b64decode(payload))
+            expiry = datetime.fromtimestamp(claims["exp"])
+            if datetime.now() > expiry:
+                print(":warning: Token expired| size=12")
+                print("---")
+                print(f"Expired {expiry.strftime('%Y-%m-%d')}| size=12")
+                print(setup_menu_item())
+                return
+            days_left = (expiry - datetime.now()).days
+            token_warning = f"Token expires in {days_left} days" if days_left < 30 else None
+        except Exception:
+            token_warning = None
 
         envoy_ip = config.get("envoy_ip")
         system_size = config.get("system_size_watts", 6000)
@@ -224,6 +251,7 @@ def main():
             print(":warning: Run --setup| size=12")
             print("---")
             print("Missing envoy_ip in config| size=12")
+            print(setup_menu_item())
             return
 
         # Get production and consumption data
@@ -289,6 +317,20 @@ def main():
             voltages = "/".join(f"{line['rmsVoltage']:.0f}" for line in lines)
             print(f"Voltage: {voltages}V| size=12")
 
+        # Token expiry warning
+        if token_warning:
+            print("---")
+            print(f":warning: {token_warning}| size=12 color=orange")
+
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            print(":warning: Token invalid| size=12")
+            print("---")
+            print(setup_menu_item())
+        else:
+            print(":warning: Error| size=12")
+            print("---")
+            print(f"HTTP {e.code}: {e.reason}")
     except Exception as e:
         print(":warning: Error| size=12")
         print("---")
