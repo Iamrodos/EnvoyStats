@@ -56,33 +56,21 @@ Make it executable:
 chmod +x ~/Library/Application\ Support/xbar/plugins/solar.4m.py
 ```
 
-### 3. Configure
+### 3. Run setup
 
-Edit the script and set your Envoy's IP address and system size:
-
-```python
-ENVOY_IP = "ENTER_YOUR_ENVOY_IP"
-SYSTEM_SIZE_WATTS = 6000  # Your system size in watts
-```
-
-To find your Envoy's IP address:
-
-1. Open the Enlighten app on your device.
-2. Tap Menu > Devices > Envoy > Connect Locally > Connect.
-
-Alternatively, check your router's connected devices list.
-
-### 4. Authenticate
-
-Newer Envoy firmware requires a JWT token for API access. The script fetches this from Enphase and stores it securely in your macOS Keychain.
-
-Run the setup command:
+The setup command configures everything interactively — Envoy IP, system size, and authentication:
 
 ```bash
 python3 ~/Library/Application\ Support/xbar/plugins/solar.4m.py --setup
 ```
 
-This will prompt for your Enphase account credentials (the same ones you use for the Enlighten app), fetch a token, and store it in Keychain. The token is valid for 1 year — re-run the setup command to refresh it.
+This will prompt for:
+
+- **Envoy IP address** — find this via the Enlighten app (Menu > Devices > Envoy > Connect Locally) or your router's connected devices list
+- **System size in watts** — used to calculate yield percentage
+- **Enphase account credentials** — the same email/password you use for the Enlighten app
+
+The setup fetches a JWT token from Enphase and stores it securely in your macOS Keychain. Configuration (IP and system size) is saved to `solar.config.json` alongside the script. The token is valid for 1 year — re-run setup to refresh it.
 
 ### 5. Refresh rate
 

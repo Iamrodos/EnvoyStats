@@ -16,15 +16,29 @@
 #   and store it securely in the macOS Keychain.
 
 import json
+import os
 import subprocess
 import sys
 import ssl
 import urllib.request
 
-ENVOY_IP = "ENTER_YOUR_ENVOY_IP"
-SYSTEM_SIZE_WATTS = 6000  # Your system size in watts
 KEYCHAIN_ACCOUNT = "envoy-solar"
 KEYCHAIN_SERVICE = "envoy-jwt-token"
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "solar.config.json")
+
+
+def load_config():
+    """Load config from solar.config.json next to the script."""
+    if not os.path.exists(CONFIG_PATH):
+        return None
+    with open(CONFIG_PATH) as f:
+        return json.load(f)
+
+
+def save_config(envoy_ip, system_size_watts):
+    """Save config to solar.config.json next to the script."""
+    with open(CONFIG_PATH, "w") as f:
+        json.dump({"envoy_ip": envoy_ip, "system_size_watts": system_size_watts}, f, indent=2)
 
 
 def get_token_from_keychain():
@@ -47,11 +61,35 @@ def save_token_to_keychain(token):
 
 
 def setup_token():
-    """Interactive setup: fetch a new JWT token from Enphase and store in Keychain."""
+    """Interactive setup: configure Envoy IP, system size, and fetch JWT token."""
     import getpass
 
-    print("Enphase Envoy Token Setup")
+    print("Enphase Envoy Setup")
     print("=" * 40)
+
+    # Load existing config for defaults
+    existing = load_config()
+    default_ip = existing["envoy_ip"] if existing else ""
+    default_size = existing["system_size_watts"] if existing else 6000
+
+    # Prompt for Envoy IP
+    if default_ip:
+        envoy_ip = input(f"Envoy IP address [{default_ip}]: ").strip() or default_ip
+    else:
+        envoy_ip = input("Envoy IP address: ").strip()
+    if not envoy_ip:
+        print("IP address is required.")
+        sys.exit(1)
+
+    # Prompt for system size
+    size_input = input(f"System size in watts [{default_size}]: ").strip()
+    system_size = int(size_input) if size_input else default_size
+
+    # Save config
+    save_config(envoy_ip, system_size)
+    print(f"Config saved: IP={envoy_ip}, Size={system_size}W")
+
+    # Prompt for Enphase credentials
     email = input("Enphase account email: ")
     password = getpass.getpass("Enphase account password: ")
 
@@ -74,7 +112,7 @@ def setup_token():
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
-    req = urllib.request.Request(f"https://{ENVOY_IP}/info.xml")
+    req = urllib.request.Request(f"https://{envoy_ip}/info.xml")
     resp = urllib.request.urlopen(req, context=ctx)
     import re
     match = re.search(r"<sn>(\d+)</sn>", resp.read().decode())
@@ -114,7 +152,7 @@ def setup_token():
     # Verify it works
     print("Testing against Envoy...")
     req = urllib.request.Request(
-        f"https://{ENVOY_IP}/production.json?details=1",
+        f"https://{envoy_ip}/production.json?details=1",
         headers={"Authorization": f"Bearer {token}"}
     )
     resp = urllib.request.urlopen(req, context=ctx)
@@ -124,13 +162,13 @@ def setup_token():
         print(f"Warning: Envoy returned HTTP {resp.status}")
 
 
-def envoy_request(path, token):
+def envoy_request(envoy_ip, path, token):
     """Make an authenticated HTTPS request to the Envoy."""
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     req = urllib.request.Request(
-        f"https://{ENVOY_IP}{path}",
+        f"https://{envoy_ip}{path}",
         headers={"Authorization": f"Bearer {token}"}
     )
     resp = urllib.request.urlopen(req, context=ctx, timeout=30)
@@ -167,15 +205,19 @@ def main():
         return
 
     try:
+        config = load_config()
         token = get_token_from_keychain()
-        if not token:
-            print(":warning: No token| size=12")
+        if not config or not token:
+            print(":warning: Run --setup| size=12")
             print("---")
-            print("Run: python3 solar.4m.py --setup| size=12")
+            print("python3 solar.4m.py --setup| size=12")
             return
 
+        envoy_ip = config["envoy_ip"]
+        system_size = config["system_size_watts"]
+
         # Get production and consumption data
-        data = envoy_request("/production.json?details=1", token)
+        data = envoy_request(envoy_ip, "/production.json?details=1", token)
         production = data["production"][1]
         consumption = data["consumption"][0]
         net = data["consumption"][1]
@@ -187,7 +229,7 @@ def main():
         # Choose icon based on power state
         if importing > 0:
             icon = "\U0001F50C"  # Power plug
-        elif producing < (SYSTEM_SIZE_WATTS / 2):
+        elif producing < (system_size / 2):
             icon = "\u26C5"  # Cloudy
         else:
             icon = "\u2600\uFE0F"  # Sun
@@ -223,9 +265,9 @@ def main():
         print("---")
 
         # Inverter data
-        inverters = envoy_request("/api/v1/production/inverters", token)
+        inverters = envoy_request(envoy_ip, "/api/v1/production/inverters", token)
         active = [inv["lastReportWatts"] for inv in inverters if inv["lastReportWatts"] >= 2]
-        yield_pct = (producing / SYSTEM_SIZE_WATTS) * 100 if SYSTEM_SIZE_WATTS > 0 else 0
+        yield_pct = (producing / system_size) * 100 if system_size > 0 else 0
         if active:
             print(f"{len(inverters)} panels: {min(active)}W\u2013{max(active)}W ({yield_pct:.0f}% yield)| size=12")
         else:
