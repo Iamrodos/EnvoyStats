@@ -311,11 +311,6 @@ def main():
         else:
             print("No inverters generating.| size=12")
 
-        # Voltage per phase
-        lines = production.get("lines", [])
-        if lines:
-            voltages = "/".join(f"{line['rmsVoltage']:.0f}" for line in lines)
-            print(f"Voltage: {voltages}V| size=12")
 
         # Token expiry warning
         if token_warning:
