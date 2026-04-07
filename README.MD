@@ -4,7 +4,7 @@ Display the status of your Enphase Envoy (IQ Gateway) solar system in your macOS
 
 Queries your Envoy on the local network over HTTPS using token-based authentication. No external dependencies — uses only Python 3 standard library and macOS Keychain for secure token storage.
 
-<!-- TODO: Add new screenshots here -->
+![EnvoyStats menu bar screenshot](screenshot.png)
 
 ## Menu Bar Display
 
@@ -23,7 +23,6 @@ The dropdown shows:
 - Grid import/export with direction arrows
 - Energy totals (today, this week, lifetime)
 - Per-panel output range and system yield
-- Voltage per phase
 
 ## Migrating from v1 (Ruby script)
 
