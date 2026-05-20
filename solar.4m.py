@@ -26,7 +26,7 @@ import urllib.request
 KEYCHAIN_ACCOUNT = "envoy-solar"
 KEYCHAIN_SERVICE = "envoy-jwt-token"
 SCRIPT_PATH = os.path.abspath(__file__)
-CONFIG_PATH = os.path.join(os.path.dirname(SCRIPT_PATH), "solar.config.json")
+CONFIG_PATH = os.path.join(os.path.dirname(SCRIPT_PATH), ".solar.config.json")
 
 
 def setup_menu_item():
